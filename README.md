@@ -6,14 +6,23 @@ This project performs real-time facial **emotion**, **age**, and **gender** dete
 
 ##  Project Structure
 emotion-age-gender-detection/
+
 │
+
 ├── emotion_finder.py # Main python file for real-time detection script
+
 ├── emotion_model.keras # Trained emotion detection model
+
 ├── gender_model.keras # Trained gender classification model
+
 ├── age_model.keras # Trained age regression model
+
 ├── haarcascade_frontalface_default.xml # Haar Cascade for face detection
+
 ├── requirements.txt # Python dependencies
+
 ├── emotion_finder.ipynb # Main jupyter notebook for real-time detection script
+
 └── README.md # Project documentation
 
 
