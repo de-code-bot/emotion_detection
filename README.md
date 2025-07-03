@@ -52,6 +52,7 @@ emotion-age-gender-detection/
 ###  Install Requirements
 
 python version 3.10.9 (Recommended) or lower required
+
 pip install -r requirements.txt
 
 ### Run the script
