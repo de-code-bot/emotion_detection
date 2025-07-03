@@ -18,26 +18,30 @@ const EmotionDetector: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [fps, setFps] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string>('');
   const animationFrameRef = useRef<number>();
   const lastFrameTimeRef = useRef<number>(0);
-  const processingTimeoutRef = useRef<NodeJS.Timeout>();
+  const lastProcessTimeRef = useRef<number>(0);
 
   // Initialize TensorFlow.js and load models
   useEffect(() => {
     const initializeTensorFlow = async () => {
       try {
-        // Set backend to webgl for better performance
+        setDebugInfo('Initializing TensorFlow.js...');
         await tf.setBackend('webgl');
         await tf.ready();
         console.log('TensorFlow.js initialized with WebGL backend');
+        setDebugInfo('Loading AI models...');
         
         const loadedModels = await loadModels();
         setModels(loadedModels);
         setIsLoading(false);
+        setDebugInfo('Ready for detection');
         console.log('All models loaded successfully');
       } catch (err) {
         console.error('Failed to initialize TensorFlow.js:', err);
         setError('Failed to initialize AI models. Please refresh the page.');
+        setDebugInfo('Failed to load models');
         setIsLoading(false);
       }
     };
@@ -47,6 +51,7 @@ const EmotionDetector: React.FC = () => {
 
   const startWebcam = useCallback(async () => {
     try {
+      setDebugInfo('Requesting camera access...');
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           width: { ideal: 640 }, 
@@ -59,11 +64,13 @@ const EmotionDetector: React.FC = () => {
         videoRef.current.srcObject = stream;
         setIsWebcamActive(true);
         setError('');
+        setDebugInfo('Camera active');
         console.log('Webcam started successfully');
       }
     } catch (err) {
       console.error('Error accessing webcam:', err);
       setError('Unable to access webcam. Please ensure you have granted camera permissions.');
+      setDebugInfo('Camera access denied');
     }
   }, []);
 
@@ -76,17 +83,15 @@ const EmotionDetector: React.FC = () => {
     setIsWebcamActive(false);
     setDetections([]);
     setIsProcessing(false);
+    setDebugInfo('Camera stopped');
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
-    }
-    if (processingTimeoutRef.current) {
-      clearTimeout(processingTimeoutRef.current);
     }
     console.log('Webcam stopped');
   }, []);
 
   const processFrame = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current || !models || !isWebcamActive || isProcessing) {
+    if (!videoRef.current || !canvasRef.current || !models || !isWebcamActive) {
       animationFrameRef.current = requestAnimationFrame(processFrame);
       return;
     }
@@ -115,42 +120,50 @@ const EmotionDetector: React.FC = () => {
     // Draw video frame to canvas
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Process detection every few frames to improve performance
-    if (!isProcessing) {
+    // Process detection every 500ms to improve performance and reliability
+    const timeSinceLastProcess = currentTime - lastProcessTimeRef.current;
+    if (!isProcessing && timeSinceLastProcess > 500) {
       setIsProcessing(true);
+      lastProcessTimeRef.current = currentTime;
       
       // Use setTimeout to prevent blocking the main thread
-      processingTimeoutRef.current = setTimeout(async () => {
+      setTimeout(async () => {
         try {
+          setDebugInfo('Detecting faces...');
           console.log('Processing frame for face detection...');
           
           // Detect faces
           const faces = await detectFaces(canvas);
           console.log(`Detected ${faces.length} faces`);
+          setDebugInfo(`Found ${faces.length} face(s)`);
           
           const results: DetectionResult[] = [];
 
           // Process each detected face
-          for (const face of faces) {
+          for (let i = 0; i < faces.length; i++) {
+            const face = faces[i];
             try {
+              setDebugInfo(`Analyzing face ${i + 1}...`);
               const prediction = await predictEmotionAgeGender(canvas, face, models);
               results.push({
                 ...face,
                 ...prediction
               });
-              console.log('Face processed:', prediction);
+              console.log(`Face ${i + 1} processed:`, prediction);
             } catch (err) {
-              console.error('Error processing individual face:', err);
+              console.error(`Error processing face ${i + 1}:`, err);
             }
           }
 
           setDetections(results);
+          setDebugInfo(results.length > 0 ? `Analyzing ${results.length} face(s)` : 'No faces detected');
         } catch (err) {
           console.error('Error processing frame:', err);
+          setDebugInfo('Detection error');
         } finally {
           setIsProcessing(false);
         }
-      }, 100); // Process every 100ms
+      }, 50); // Small delay to prevent blocking
     }
 
     animationFrameRef.current = requestAnimationFrame(processFrame);
@@ -160,15 +173,13 @@ const EmotionDetector: React.FC = () => {
   useEffect(() => {
     if (isWebcamActive && models) {
       console.log('Starting frame processing...');
+      setDebugInfo('Starting detection...');
       processFrame();
     }
     
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
-      }
-      if (processingTimeoutRef.current) {
-        clearTimeout(processingTimeoutRef.current);
       }
     };
   }, [isWebcamActive, models, processFrame]);
@@ -179,7 +190,7 @@ const EmotionDetector: React.FC = () => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-white mx-auto mb-4"></div>
           <p className="text-white text-lg">Loading AI models...</p>
-          <p className="text-blue-200 text-sm mt-2">This may take a moment on first load</p>
+          <p className="text-blue-200 text-sm mt-2">{debugInfo}</p>
         </div>
       </div>
     );
@@ -201,8 +212,16 @@ const EmotionDetector: React.FC = () => {
               
               {/* Processing indicator */}
               {isProcessing && isWebcamActive && (
-                <div className="absolute top-4 right-4 bg-blue-600/80 text-white px-3 py-1 rounded-full text-sm">
+                <div className="absolute top-4 right-4 bg-blue-600/80 text-white px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                  <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
                   Processing...
+                </div>
+              )}
+              
+              {/* Status indicator */}
+              {isWebcamActive && (
+                <div className="absolute top-4 left-4 bg-green-600/80 text-white px-3 py-1 rounded-full text-sm">
+                  Live
                 </div>
               )}
               
@@ -237,16 +256,16 @@ const EmotionDetector: React.FC = () => {
             />
             
             {/* Debug info */}
-            {isWebcamActive && (
-              <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4">
-                <h4 className="text-white text-sm font-medium mb-2">Debug Info</h4>
-                <div className="text-xs text-blue-200 space-y-1">
-                  <p>Processing: {isProcessing ? 'Yes' : 'No'}</p>
-                  <p>Models loaded: {models ? 'Yes' : 'No'}</p>
-                  <p>Canvas size: {canvasRef.current?.width || 0}x{canvasRef.current?.height || 0}</p>
-                </div>
+            <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4">
+              <h4 className="text-white text-sm font-medium mb-2">System Status</h4>
+              <div className="text-xs text-blue-200 space-y-1">
+                <p>Status: {debugInfo}</p>
+                <p>Processing: {isProcessing ? 'Active' : 'Idle'}</p>
+                <p>Models: {models ? 'Loaded' : 'Loading'}</p>
+                <p>Canvas: {canvasRef.current?.width || 0}×{canvasRef.current?.height || 0}</p>
+                <p>Detections: {detections.length}</p>
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
